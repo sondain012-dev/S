@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Advanced Physics Simulator</title>
+    <style>
+        :root { --primary: #2563eb; --bg: #f8fafc; }
+        body { font-family: 'Pretendard', sans-serif; background: var(--bg); display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        .container { display: flex; gap: 20px; max-width: 1000px; width: 100%; }
+        canvas { background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); flex-grow: 1; }
+        .controls { width: 300px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        .control-group { margin-bottom: 15px; }
+        label { display: block; font-size: 0.9rem; margin-bottom: 5px; color: #475569; }
+        input[type="range"] { width: 100%; }
+        select, button { width: 100%; padding: 10px; margin-top: 5px; border-radius: 6px; border: 1px solid #ddd; }
+        button { background: var(--primary); color: white; border: none; cursor: pointer; font-weight: bold; }
+        .data-display { margin-top: 10px; font-family: monospace; font-size: 0.85rem; background: #eee; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+
+    <h2>물리 운동 인터랙티브 시각화</h2>
+
+    <div class="container">
+        <div class="controls">
+            <div class="control-group">
+                <label>운동 종류 선택</label>
+                <select id="modeSelect" onchange="initSimulation()">
+                    <option value="projectile">포물선 운동 (Projectile)</option>
+                    <option value="pendulum">진자 운동 (Pendulum)</option>
+                    <option value="linear">등가속도 운동 (Linear Accel)</option>
+                </select>
+            </div>
+
+            <hr>
+
+            <div class="control-group">
+                <label>시간 흐름 (Time: <span id="timeVal">0</span>s)</label>
+                <input type="range" id="timeSlider" min="0" max="20" step="0.1" value="0">
+            </div>
+
+            <div id="params">
+                <div class="control-group">
+                    <label id="param1Label">초기 속도 / 길이</label>
+                    <input type="range" id="param1" min="10" max="100" value="50">
+                </div>
+                <div class="control-group">
+                    <label id="param2Label">발사 각도 / 초기 각도</label>
+                    <input type="range" id="param2" min="0" max="90" value="45">
+                </div>
+            </div>
+
+            <div class="data-display" id="info">
+                위치: (0, 0)<br>속도: 0
+            </div>
+        </div>
+
+        <canvas id="canvas" width="700" height="500"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const timeSlider = document.getElementById('timeSlider');
+        const modeSelect = document.getElementById('modeSelect');
+        const p1 = document.getElementById('param1');
+        const p2 = document.getElementById('param2');
+
+        const g = 9.8; // 중력 가속도
+
+        function initSimulation() {
+            timeSlider.value = 0;
+            const mode = modeSelect.value;
+            
+            if(mode === 'projectile') {
+                document.getElementById('param1Label').innerText = "초기 속도 (v0)";
+                document.getElementById('param2Label').innerText = "발사 각도 (deg)";
+                p2.max = 90; p2.value = 45;
+            } else if(mode === 'pendulum') {
+                document.getElementById('param1Label').innerText = "줄의 길이 (L)";
+                document.getElementById('param2Label').innerText = "시작 각도 (θ)";
+                p2.max = 90; p2.value = 30;
+            } else {
+                document.getElementById('param1Label').innerText = "가속도 (a)";
+                document.getElementById('param2Label').innerText = "초기 속도 (v0)";
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const t = parseFloat(timeSlider.value);
+            document.getElementById('timeVal').innerText = t;
+            
+            const mode = modeSelect.value;
+            let x = 0, y = 0, vx = 0, vy = 0;
+
+            if (mode === 'projectile') {
+                // 포물선 운동 공식
+                const v0 = parseFloat(p1.value);
+                const angle = parseFloat(p2.value) * Math.PI / 180;
+                
+                x = v0 * Math.cos(angle) * t;
+                y = v0 * Math.sin(angle) * t - 0.5 * g * t * t;
+                
+                // 화면 좌표 변환 (Y축 반전 및 보정)
+                drawBall(50 + x, canvas.height - 50 - y);
+                updateInfo(x, y, v0);
+
+            } else if (mode === 'pendulum') {
+                // 진자 운동 공식 (단진동 근사)
+                const L = parseFloat(p1.value) * 2; // 가시성을 위해 2배
+                const theta0 = parseFloat(p2.value) * Math.PI / 180;
+                const omega = Math.sqrt(g*10 / L); // 속도감을 위해 g 보정
+                const theta = theta0 * Math.cos(omega * t);
+
+                const originX = canvas.width / 2;
+                const originY = 100;
+                x = originX + L * Math.sin(theta);
+                y = originY + L * Math.cos(theta);
+
+                // 줄 그리기
+                ctx.beginPath();
+                ctx.moveTo(originX, originY);
+                ctx.lineTo(x, y);
+                ctx.stroke();
+                drawBall(x, y);
+                updateInfo(theta.toFixed(2), "rad", 0);
+
+            } else if (mode === 'linear') {
+                // 등가속도 운동
+                const a = parseFloat(p1.value) / 10;
+                const v0 = parseFloat(p2.value) / 5;
+                x = v0 * t * 20 + 0.5 * a * t * t * 20; // 픽셀 보정
+                y = canvas.height / 2;
+                drawBall(50 + x, y);
+                updateInfo(x, y, (v0 + a * t));
+            }
+
+            requestAnimationFrame(draw);
+        }
+
+        function drawBall(x, y) {
+            ctx.beginPath();
+            ctx.arc(x, y, 15, 0, Math.PI * 2);
+            ctx.fillStyle = "#2563eb";
+            ctx.fill();
+            ctx.closePath();
+        }
+
+        function updateInfo(x, y, v) {
+            document.getElementById('info').innerHTML = 
+                `상태 값:<br>X: ${Math.round(x)} | Y: ${Math.round(y)}<br>연산 속도: ${Math.abs(v).toFixed(2)}`;
+        }
+
+        initSimulation();
+        draw();
+    </script>
+</body>
+</html>
